@@ -1,5 +1,10 @@
-import streamlit as st
 import os
+# 必须在导入 sentence_transformers 之前设置环境变量，否则镜像源可能不生效
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+# 抑制 TensorFlow 日志
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+import streamlit as st
 import pickle
 import numpy as np
 import pandas as pd
@@ -11,7 +16,6 @@ from sentence_transformers import SentenceTransformer
 from sklearn.decomposition import PCA
 
 # --- 0. 基础配置 ---
-os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VECTOR_FILE = os.path.join(BASE_DIR, 'ming_vectors.pkl')
 
@@ -38,7 +42,7 @@ class HistoryEmbeddingLayer:
         self.model = st.session_state.model
 
         if not os.path.exists(self.vector_file):
-            st.error(f"❌ 找不到 {self.vector_file}！请先运行 build_index.py")
+            st.error(f" 找不到 {self.vector_file}！请先运行 build_index.py")
             return
 
         if 'db_data' not in st.session_state:
@@ -203,13 +207,13 @@ def main():
         col1, col2 = st.columns([1, 1])
         
         with col1:
-            st.subheader("📍 历史锚点 (Fact Anchor)")
+            st.subheader(" 历史锚点 (Fact Anchor)")
             st.success(f"**{fact_item['data']['name']}** (相似度: {fact_item['score']:.4f})")
             st.markdown(f"_{fact_item['data']['text']}_")
             
             st.divider()
             
-            st.subheader("🎲 生成的合理伪史 (Generated Pseudo-History)")
+            st.subheader(" 生成的合理伪史 (Generated Pseudo-History)")
             st.caption(f"基于插值向量 (Alpha={alpha}) 在语义空间中召回的最近邻状态")
             
             # 显示生成的“伪史”片段（其实是语义空间中介于事实和虚构之间的真实片段，作为模拟）
@@ -221,15 +225,15 @@ def main():
             st.write(gen_text)
             
             # 制度校验结果
-            st.markdown("#### 🛡️ 制度-语境对齐层校验")
+            st.markdown("####  制度-语境对齐层校验")
             if validation['is_valid']:
-                st.success(f"✅ 通过校验 (Score: {validation['score']:.2f})")
+                st.success(f" 通过校验 (Score: {validation['score']:.2f})")
                 st.markdown(f"**识别到的制度关键词**：`{', '.join(validation['keywords'])}`")
             else:
                 st.warning("⚠️ 警告：未检测到典型的明代制度特征，生成内容可能偏离时代语境。")
                 
         with col2:
-            st.subheader("🌌 语义流形可视化")
+            st.subheader(" 语义流形可视化")
             
             # 准备绘图数据
             # 1. 事实点
@@ -279,14 +283,20 @@ def main():
             """)
             
             # CBDB 补充信息
-            if validation['is_valid'] and gen_name != '未知':
+            # 只有当条目被归类为“人物”时才调用 CBDB，避免用事件名去查人名数据库
+            category = best_match['data'].get('category', '人物') # 兼容旧数据，默认为人物
+            
+            if validation['is_valid'] and gen_name != '未知' and category == '人物':
                  st.divider()
-                 st.markdown(f"**📜 {gen_name} 的真实履历 (CBDB)**")
+                 st.markdown(f"** {gen_name} 的真实履历 (CBDB)**")
                  bio = get_cbdb_bio(gen_name)
                  if bio:
                      st.json(bio)
                  else:
                      st.write("无详细记录")
+            elif category != '人物':
+                st.divider()
+                st.info(f"ℹ 当前条目类别为 **{category}**，不展示人物履历。")
 
 if __name__ == "__main__":
     main()

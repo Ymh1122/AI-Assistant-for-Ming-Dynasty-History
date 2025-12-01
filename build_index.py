@@ -1,6 +1,7 @@
 # 1. 配置路径
 import os
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'#！！！！关梯子运行更快！！！
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 import glob
 import pickle
 import numpy as np
@@ -17,6 +18,16 @@ DATA_FOLDER = os.path.join(current_script_path, 'ming_dynasty_cn')
 print(f"📍 锁定数据路径: {DATA_FOLDER}")
 # --- 核心修改结束 ---
 
+def classify_entry(name):
+    """
+    根据文件名简单推断条目类型
+    """
+    if any(k in name for k in ['史', '书', '典', '律', '记', '考', '录']):
+        return '典籍'
+    if any(k in name for k in ['变', '战', '役', '案', '争', '乱', '法', '制', '饷', '边', '卫']):
+        return '事件/制度'
+    # 默认视为人物
+    return '人物'
 
 def read_and_chunk_files(folder_path, chunk_size=150):
     """
@@ -32,12 +43,13 @@ def read_and_chunk_files(folder_path, chunk_size=150):
         print(f"❌ 错误：在 '{folder_path}' 下没找到 .txt 文件！请检查文件夹名字。")
         return []
 
-    print(f"📂 发现 {len(txt_files)} 个人物传记文件，开始处理...")
+    print(f"📂 发现 {len(txt_files)} 个历史条目文件，开始处理...")
 
     for file_path in txt_files:
-        # 从文件名提取人名 (例如 "ming_dynasty_bios/张居正.txt" -> "张居正")
+        # 从文件名提取条目名
         file_name = os.path.basename(file_path)
-        person_name = file_name.replace('.txt', '')
+        entry_name = file_name.replace('.txt', '')
+        category = classify_entry(entry_name)
         
         try:
             # 尝试 UTF-8 读取，如果报错尝试 GBK (防止 Windows 编码问题)
@@ -60,8 +72,9 @@ def read_and_chunk_files(folder_path, chunk_size=150):
             # 如果当前块够长了，就存起来，并开启新的一块
             if len(current_chunk) >= chunk_size:
                 all_chunks.append({
-                    "id": f"{person_name}_{len(all_chunks)}",
-                    "name": person_name,
+                    "id": f"{entry_name}_{len(all_chunks)}",
+                    "name": entry_name,
+                    "category": category, # 新增分类字段
                     "text": current_chunk
                 })
                 current_chunk = "" # 重置
@@ -69,8 +82,9 @@ def read_and_chunk_files(folder_path, chunk_size=150):
         # 处理最后剩余的一点点文本
         if current_chunk:
             all_chunks.append({
-                "id": f"{person_name}_last",
-                "name": person_name,
+                "id": f"{entry_name}_last",
+                "name": entry_name,
+                "category": category,
                 "text": current_chunk
             })
             
