@@ -10,54 +10,127 @@ import plotly.express as px
 from sentence_transformers import SentenceTransformer
 from sklearn.decomposition import PCA
 
-# --- 0. 基础配置 (解决网络和路径问题) ---
-os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com' # 确保模型加载不卡顿
-#pip install streamlit pandas plotly scikit-learn#！！关梯子运行！！！
-
-# 获取当前脚本所在路径，确保能找到 .pkl 文件
+# --- 0. 基础配置 ---
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VECTOR_FILE = os.path.join(BASE_DIR, 'ming_vectors.pkl')
 
-st.set_page_config(page_title="明史 · 语义检索系统", layout="wide", page_icon="📜")
+st.set_page_config(page_title="明域 · 伪史生成系统", layout="wide", page_icon="🐉")
 
-# --- 1. 核心资源加载 (带缓存，只跑一次) ---
-@st.cache_resource
-def load_resources():
-    st.toast("正在加载 Embedding 模型和向量库...", icon="⏳")
-    
-    # 加载模型
-    model = SentenceTransformer('BAAI/bge-small-zh-v1.5')
-    
-    # 加载数据
-    if not os.path.exists(VECTOR_FILE):
-        st.error(f"❌ 找不到 {VECTOR_FILE}！请先运行 build_index.py")
-        return None, None, None
+# --- 核心架构类定义 ---
+
+class HistoryEmbeddingLayer:
+    """
+    第1层：历史事实嵌入层
+    功能：加载“明代历史知识图谱嵌入空间”，提供向量化和检索能力。
+    """
+    def __init__(self, vector_file):
+        self.vector_file = vector_file
+        self.model = None
+        self.db_data = None
+        self.db_embeddings = None
+        self._load_resources()
+
+    def _load_resources(self):
+        # 使用 st.cache_resource 避免重复加载
+        if 'model' not in st.session_state:
+            st.session_state.model = SentenceTransformer('BAAI/bge-small-zh-v1.5')
+        self.model = st.session_state.model
+
+        if not os.path.exists(self.vector_file):
+            st.error(f"❌ 找不到 {self.vector_file}！请先运行 build_index.py")
+            return
+
+        if 'db_data' not in st.session_state:
+            with open(self.vector_file, 'rb') as f:
+                data = pickle.load(f)
+                st.session_state.db_data = data['data']
+                st.session_state.db_embeddings = data['embeddings']
         
-    with open(VECTOR_FILE, 'rb') as f:
-        data = pickle.load(f)
+        self.db_data = st.session_state.db_data
+        self.db_embeddings = st.session_state.db_embeddings
+
+    def encode(self, text):
+        return self.model.encode([text], normalize_embeddings=True)
+
+    def search(self, query_vec, top_k=3):
+        if self.db_embeddings is None: return []
+        scores = np.dot(self.db_embeddings, query_vec.T).flatten()
+        top_indices = np.argsort(scores)[::-1][:top_k]
         
-    return model, data['data'], data['embeddings']
+        results = []
+        for idx in top_indices:
+            results.append({
+                "score": scores[idx],
+                "data": self.db_data[idx],
+                "vector": self.db_embeddings[idx]
+            })
+        return results
 
-model, db_data, db_embeddings = load_resources()
+class ContextAlignmentLayer:
+    """
+    第2层：制度-语境对齐层
+    功能：确保生成内容符合明代制度逻辑（如卫所、里甲、科举、厂卫）。
+    """
+    def __init__(self):
+        self.keywords = [
+            "卫所", "锦衣卫", "东厂", "西厂", "内阁", "科举", "六部", 
+            "巡抚", "总督", "里甲", "黄册", "鱼鳞图册", "海禁", "朝贡",
+            "司礼监", "翰林院", "国子监", "布政使", "按察使", "都指挥使"
+        ]
 
-# --- 2. CBDB API 函数 (我们之前调试完美的版本) ---
+    def validate(self, text):
+        """简单模拟“多任务学习：制度分类头”"""
+        found_keywords = [kw for kw in self.keywords if kw in text]
+        score = len(found_keywords) * 0.2  # 简单的启发式打分
+        return {
+            "is_valid": len(found_keywords) > 0,
+            "score": min(score, 1.0),
+            "keywords": found_keywords
+        }
+
+class FictionDiffusionLayer:
+    """
+    第3层：合理虚构扩散层
+    功能：在历史语义邻域内进行受控向量插值，生成“未记载但可能”的事件细节。
+    """
+    def __init__(self, embedding_layer):
+        self.emb_layer = embedding_layer
+
+    def interpolate_and_generate(self, fact_vec, query_vec, alpha=0.3):
+        """
+        Constrained Diffusion in Embedding Space (模拟)
+        V_gen = (1 - alpha) * V_fact + alpha * V_query
+        """
+        # 向量插值
+        # alpha 越大，越偏向用户的“虚构/查询”；alpha 越小，越偏向“史实”
+        gen_vec = (1 - alpha) * fact_vec + alpha * query_vec
+        
+        # 归一化（保持在单位球面上，符合 cosine similarity 特性）
+        norm = np.linalg.norm(gen_vec)
+        if norm > 0:
+            gen_vec = gen_vec / norm
+            
+        # 在空间中寻找最近的“潜在史料”作为生成的基底
+        # 注意：这里我们寻找的是除了原始 fact 之外最近的点，代表“可能的变体”
+        results = self.emb_layer.search(gen_vec, top_k=5)
+        
+        return gen_vec, results
+
+# --- 辅助函数 (CBDB) ---
 def get_cbdb_bio(name_cn):
     """从哈佛 CBDB 获取结构化数据"""
-    name_trad = zhconv.convert(name_cn, 'zh-hant')
-    url = "https://cbdb.fas.harvard.edu/cbdbapi/person.php"
-    params = {"name": name_trad, "o": "json"}
-    
     try:
-        resp = requests.get(url, params=params, timeout=5)
+        name_trad = zhconv.convert(name_cn, 'zh-hant')
+        url = "https://cbdb.fas.harvard.edu/cbdbapi/person.php"
+        params = {"name": name_trad, "o": "json"}
+        resp = requests.get(url, params=params, timeout=3)
         data = json.loads(resp.text)
-        
-        # 剥洋葱逻辑
         if 'Package' in data: data = data['Package']
         if 'PersonAuthority' in data: data = data['PersonAuthority']
         if 'PersonInfo' in data: data = data['PersonInfo']
         if 'Person' in data: data = data['Person']
         
-        # 归一化处理
         if isinstance(data, dict): target = data
         elif isinstance(data, list): target = data[0]
         else: return None
@@ -74,141 +147,146 @@ def get_cbdb_bio(name_cn):
     except:
         return None
 
-# --- 3. 语义搜索逻辑 ---
-def semantic_search(query, top_k=3):
-    # 1. 问题转向量
-    query_vec = model.encode([query], normalize_embeddings=True)
-    # 2. 计算相似度
-    scores = np.dot(db_embeddings, query_vec.T).flatten()
-    # 3. 排序
-    top_indices = np.argsort(scores)[::-1][:top_k]
-    
-    results = []
-    for idx in top_indices:
-        results.append({
-            "score": scores[idx],
-            "data": db_data[idx]
-        })
-    return results, query_vec
+# --- UI 逻辑 ---
 
-# --- 4. 界面 UI 布局 ---
+def main():
+    # 初始化各层
+    layer1 = HistoryEmbeddingLayer(VECTOR_FILE)
+    layer2 = ContextAlignmentLayer()
+    layer3 = FictionDiffusionLayer(layer1)
 
-# 标题栏
-st.title("📜 明史 AI 语义检索系统")
-st.markdown("结合 **NLP Embeddings** 与 **CBDB 数据库** 的数字人文探索项目")
-st.divider()
-
-# 侧边栏：搜索控制
-with st.sidebar:
-    st.header("🔍 探索面板")
-    user_query = st.text_input("输入你的问题", "张居正和戚继光是什么关系？")
-    
-    st.info("💡 试一试：\n1. 谁是明朝开国皇帝？\n2. 嘉靖皇帝是否沉迷丹药？\n3. 徐霞客去过哪里？\n4. 土木堡之变")
-    
-    search_btn = st.button("开始分析", type="primary")
-    
-    st.divider()
-    st.caption("Developed by CS Year 2 Group")
-
-# 主界面逻辑
-if search_btn or user_query:
-    if not db_data:
-        st.stop()
-        
-    # --- A. 执行搜索 ---
-    results, query_vec = semantic_search(user_query)
-    
-    # 布局：左边显示文本结果，右边显示可视化
-    col_left, col_right = st.columns([1.2, 1])
-    
-    # --- 左侧：检索结果 ---
-    with col_left:
-        st.subheader("📖 史料检索 (Retrieval)")
-        
-        # 提取排名第一的人名，用于查 CBDB
-        top_person_name = results[0]['data']['name']
-        
-        for i, res in enumerate(results):
-            score = res['score']
-            text = res['data']['text']
-            name = res['data']['name']
-            
-            # 动态卡片颜色
-            border_color = "red" if i == 0 else "grey"
-            
-            with st.container(border=True):
-                st.markdown(f"**Top {i+1} | {name}** (置信度: `{score:.4f}`)")
-                st.markdown(f"> {text}")
-
-    # --- 右侧：CBDB + 可视化 ---
-    with col_right:
-        # 1. CBDB 档案卡片
-        st.subheader("🪪 人物档案 (CBDB API)")
-        
-        # 只有当置信度比较高时，才去查 CBDB，节省 API 资源
-        if results[0]['score'] > 0.4:
-            with st.spinner(f"正在连接哈佛服务器查询 {top_person_name}..."):
-                bio = get_cbdb_bio(top_person_name)
-            
-            if bio:
-                st.success(f"已找到 **{top_person_name}** 的官方记录")
-                col_a, col_b = st.columns(2)
-                col_a.metric("生卒年", f"{bio['birth']} - {bio['death']}")
-                col_a.metric("籍贯", bio['native'])
-                col_b.metric("CBDB ID", bio['id'])
-                col_b.metric("朝代", bio['dynasty'])
-            else:
-                st.warning(f"CBDB 暂无 {top_person_name} 的结构化数据 (或网络超时)")
-        else:
-            st.info("未检测到明确的历史人物，暂不调用 CBDB。")
-
-        # 2. 向量空间散点图 (亮点!)
+    # 侧边栏
+    with st.sidebar:
+        st.title("🐉 明域 MingYu")
+        st.caption("基于历史语义嵌入的合理伪史生成系统")
         st.divider()
-        st.subheader("🌌 语义空间可视化 (PCA)")
         
-        # 准备绘图数据
-        # 我们把数据库里的前 50 条拿出来画，太多会乱
-        subset_indices = list(range(min(len(db_data), 50)))
-        subset_vecs = db_embeddings[subset_indices]
-        subset_names = [db_data[i]['name'] for i in subset_indices]
-        subset_texts = [db_data[i]['text'][:30] for i in subset_indices]
+        st.header("⚙️ 系统参数 (System Params)")
+        alpha = st.slider("虚构扩散系数 (Alpha)", 0.0, 1.0, 0.3, help="0=完全史实, 1=完全虚构")
+        threshold = st.slider("合理性阈值 (Credibility)", 0.0, 1.0, 0.4, help="过滤掉语义距离过远的结果")
         
-        # 把用户的查询向量也加进去
-        all_vecs = np.vstack([subset_vecs, query_vec])
-        
-        # PCA 降维到 2D
-        pca = PCA(n_components=2)
-        all_coords = pca.fit_transform(all_vecs)
-        
-        # 构建 DataFrame
-        df = pd.DataFrame({
-            'x': all_coords[:-1, 0],
-            'y': all_coords[:-1, 1],
-            'name': subset_names,
-            'desc': subset_texts,
-            'type': ['History'] * len(subset_names)
-        })
-        
-        # 添加用户查询点
-        query_df = pd.DataFrame({
-            'x': [all_coords[-1, 0]],
-            'y': [all_coords[-1, 1]],
-            'name': ['YOUR QUERY'],
-            'desc': [user_query],
-            'type': ['Query']
-        })
-        
-        final_df = pd.concat([df, query_df])
-        
-        # Plotly 画图
-        fig = px.scatter(final_df, x='x', y='y', color='name', symbol='type',
-                         hover_data=['desc'], size_max=15, 
-                         title="语义距离分布图")
-        # 标记出 Query 点为大星星
-        fig.update_traces(marker=dict(size=12))
-        
-        st.plotly_chart(fig, use_container_width=True)
-        st.caption("✨ 图中距离越近的点，表示语义（含义）越相似。红星代表你的问题。")
+        st.info("💡 **操作指南**：\n输入一个“假如”的历史情境，系统将在明代语义流形中寻找最合理的“伪史”落点。")
 
-else:
-    st.write("👈 请在左侧侧边栏输入问题并点击“开始分析”")
+    # 主界面
+    st.title("《明域》：合理伪史生成控制台")
+    st.markdown("""
+    > **核心理念**：在明代历史的语义流形上，进行有界的历史想象力探索。
+    """)
+    
+    query = st.text_input("📝 输入历史假设 / 探索节点", "假如张居正支持万历皇帝彻底清算冯保")
+    
+    if st.button("启动生成引擎", type="primary"):
+        if not layer1.db_data:
+            st.error("数据未加载，请检查 build_index.py 是否运行。")
+            st.stop()
+            
+        with st.spinner("正在遍历历史语义流形..."):
+            # 1. 编码用户输入 (Layer 1)
+            query_vec = layer1.encode(query)
+            
+            # 2. 检索最近的历史事实 (Layer 1)
+            # 这是“锚点”，确保虚构不脱离历史基底
+            fact_results = layer1.search(query_vec, top_k=1)
+            fact_item = fact_results[0]
+            fact_vec = fact_item['vector']
+            
+            # 3. 向量插值与扩散 (Layer 3)
+            gen_vec, nearby_results = layer3.interpolate_and_generate(fact_vec, query_vec, alpha)
+            
+            # 4. 制度校验 (Layer 2)
+            # 对生成结果（这里用最近邻近似）进行校验
+            best_match = nearby_results[0] # 最接近插值点的文本
+            validation = layer2.validate(best_match['data']['text'])
+            
+        # --- 结果展示 ---
+        
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.subheader("📍 历史锚点 (Fact Anchor)")
+            st.success(f"**{fact_item['data']['name']}** (相似度: {fact_item['score']:.4f})")
+            st.markdown(f"_{fact_item['data']['text']}_")
+            
+            st.divider()
+            
+            st.subheader("🎲 生成的合理伪史 (Generated Pseudo-History)")
+            st.caption(f"基于插值向量 (Alpha={alpha}) 在语义空间中召回的最近邻状态")
+            
+            # 显示生成的“伪史”片段（其实是语义空间中介于事实和虚构之间的真实片段，作为模拟）
+            gen_text = best_match['data']['text']
+            gen_name = best_match['data']['name']
+            gen_score = best_match['score'] # 这里是与插值向量的距离
+            
+            st.info(f"**相关人物：{gen_name}**")
+            st.write(gen_text)
+            
+            # 制度校验结果
+            st.markdown("#### 🛡️ 制度-语境对齐层校验")
+            if validation['is_valid']:
+                st.success(f"✅ 通过校验 (Score: {validation['score']:.2f})")
+                st.markdown(f"**识别到的制度关键词**：`{', '.join(validation['keywords'])}`")
+            else:
+                st.warning("⚠️ 警告：未检测到典型的明代制度特征，生成内容可能偏离时代语境。")
+                
+        with col2:
+            st.subheader("🌌 语义流形可视化")
+            
+            # 准备绘图数据
+            # 1. 事实点
+            # 2. 用户查询点
+            # 3. 生成点 (插值点)
+            # 4. 背景点 (随机取一些)
+            
+            subset_indices = list(range(min(len(layer1.db_data), 50)))
+            subset_vecs = layer1.db_embeddings[subset_indices]
+            subset_names = [layer1.db_data[i]['name'] for i in subset_indices]
+            
+            # 降维
+            all_vecs = np.vstack([subset_vecs, fact_vec, query_vec, gen_vec])
+            pca = PCA(n_components=2)
+            all_coords = pca.fit_transform(all_vecs)
+            
+            # 背景数据
+            bg_len = len(subset_vecs)
+            df_bg = pd.DataFrame({
+                'x': all_coords[:bg_len, 0],
+                'y': all_coords[:bg_len, 1],
+                'label': subset_names,
+                'type': ['History Background'] * bg_len
+            })
+            
+            # 特殊点
+            df_special = pd.DataFrame({
+                'x': [all_coords[bg_len, 0], all_coords[bg_len+1, 0], all_coords[bg_len+2, 0]],
+                'y': [all_coords[bg_len, 1], all_coords[bg_len+1, 1], all_coords[bg_len+2, 1]],
+                'label': ['历史锚点 (Fact)', '用户假设 (Query)', '生成伪史 (Generated)'],
+                'type': ['Anchor', 'Query', 'Generated']
+            })
+            
+            final_df = pd.concat([df_bg, df_special])
+            
+            fig = px.scatter(final_df, x='x', y='y', color='type', hover_data=['label'],
+                             symbol='type', size_max=15, title="历史语义拓扑空间")
+            
+            fig.update_traces(marker=dict(size=12))
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.caption("""
+            **图例说明**：
+            - **Anchor**: 真实历史中与假设最接近的事件。
+            - **Query**: 你的假设在语义空间中的位置。
+            - **Generated**: 系统根据 Alpha 插值计算出的“伪史”落点。
+            """)
+            
+            # CBDB 补充信息
+            if validation['is_valid'] and gen_name != '未知':
+                 st.divider()
+                 st.markdown(f"**📜 {gen_name} 的真实履历 (CBDB)**")
+                 bio = get_cbdb_bio(gen_name)
+                 if bio:
+                     st.json(bio)
+                 else:
+                     st.write("无详细记录")
+
+if __name__ == "__main__":
+    main()

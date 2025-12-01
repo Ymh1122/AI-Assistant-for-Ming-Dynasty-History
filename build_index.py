@@ -12,7 +12,7 @@ current_script_path = os.path.dirname(os.path.abspath(__file__))
 
 # 2. 拼接出数据文件夹的绝对路径
 # 这样无论你在终端哪个目录下运行，Python 都能精准找到桌面上这个文件夹
-DATA_FOLDER = os.path.join(current_script_path, 'ming_dynasty_bios')
+DATA_FOLDER = os.path.join(current_script_path, 'ming_dynasty_cn')
 
 print(f"📍 锁定数据路径: {DATA_FOLDER}")
 # --- 核心修改结束 ---
