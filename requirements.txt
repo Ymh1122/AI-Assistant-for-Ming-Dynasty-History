@@ -6,3 +6,7 @@ scikit-learn
 plotly
 requests
 zhconv
+dashscope
+beautifulsoup4
+python-dotenv
+jieba

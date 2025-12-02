@@ -5,6 +5,7 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 import glob
 import pickle
 import numpy as np
+import re
 from sentence_transformers import SentenceTransformer
 
 # --- 核心修改开始 ---
@@ -28,6 +29,14 @@ def classify_entry(name):
         return '事件/制度'
     # 默认视为人物
     return '人物'
+
+def clean_text(text):
+    """清理文本中的 URL 和其他无关字符"""
+    # 去除 URL
+    text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', text)
+    # 去除多余空白
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
 
 def read_and_chunk_files(folder_path, chunk_size=150):
     """
@@ -58,6 +67,9 @@ def read_and_chunk_files(folder_path, chunk_size=150):
         except UnicodeDecodeError:
             with open(file_path, 'r', encoding='gbk', errors='ignore') as f:
                 content = f.read()
+
+        # 清理文本
+        content = clean_text(content)
 
         # --- 切片逻辑 (Chunking) ---
         # 简单粗暴但有效：按句号拆分，然后拼凑成 chunk_size 大小的块

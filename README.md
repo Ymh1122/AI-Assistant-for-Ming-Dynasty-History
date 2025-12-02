@@ -20,7 +20,7 @@ Unlike traditional LLM free-form creation, MingYu upgrades Embedding technology 
 
 ## 🏗️ 技术架构 / Technical Architecture
 
-本系统采用 **三层嵌入体系 (Three-Layer Embedding System)**：
+本系统采用 **四层嵌入与生成体系 (Four-Layer Embedding & Generation System)**：
 
 ### 1. 历史事实嵌入层 (Historical Fact Embedding Layer)
 - **功能**：对《明实录》《明史》等正史文本进行细粒度向量化，构建“明代历史知识图谱嵌入空间”。
@@ -39,6 +39,18 @@ Unlike traditional LLM free-form creation, MingYu upgrades Embedding technology 
 - **实现**：向量空间插值 (Vector Interpolation) + 最近邻检索 (Nearest Neighbor Search)。
 - **Function**: Performs controlled vector interpolation within the historical semantic neighborhood to generate "unrecorded but plausible" event details.
 - **Implementation**: Vector Interpolation + Nearest Neighbor Search.
+
+### 4. 大模型生成层 (LLM Generation Layer)
+- **功能**：基于插值后的语义语境，调用 Qwen 大模型生成真正的伪史文本。
+- **实现**：Prompt Engineering + Qwen-Plus API。
+- **Function**: Generates actual pseudo-history text using Qwen LLM based on the interpolated semantic context.
+- **Implementation**: Prompt Engineering + Qwen-Plus API.
+
+### 5. 内容合规性审核 (Content Auditor)
+- **功能**：验证生成内容是否符合用户指令，并进行合规性检查。
+- **实现**：实体一致性检查 (Entity Consistency Check)。
+- **Function**: Validates if generated content matches user instructions and performs compliance checks.
+- **Implementation**: Entity Consistency Check.
 
 ---
 
