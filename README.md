@@ -1,113 +1,118 @@
-# 《明域》：基于历史语义嵌入的合理伪史生成系统
-# MingYu: Reasonable Pseudo-History Generation System Based on Historical Semantic Embeddings
 
-**《明域》** 是一个融合数字人文与自然语言处理技术的创新实验平台，旨在通过 **历史文本嵌入 (Historical Text Embedding)** 构建明代历史的语义拓扑空间，并在此空间中生成具有高度可信度的“合理伪史”。
+# 《明域》 (MingYu)
 
-**MingYu** is an innovative experimental platform integrating Digital Humanities and Natural Language Processing (NLP). It aims to construct a semantic topological space of Ming Dynasty history using **Historical Text Embedding** and generate highly credible "reasonable pseudo-history" within this space.
+### 基于向量偏移的合理伪史生成系统
 
----
+### Vector-Guided Reasonable Pseudo-History Generator
 
-## 💡 核心理念 / Core Philosophy
+**《明域》** 是一个基于 **RAG (检索增强生成)** 与 **向量空间插值** 技术的实验性历史推演工具。
 
-> **在明代历史的语义流形上，进行有界的历史想象力探索。**
-> **Exploring bounded historical imagination on the semantic manifold of Ming Dynasty history.**
+不同于传统大模型“天马行空”的虚构，本系统利用 Embedding 技术在“严谨史实”与“用户假设”之间构建一条**向量通道**。通过控制偏移系数 $\alpha$，我们在明代历史的语义空间中寻找“最合理的偏差邻域”，从而约束大模型生成既符合明代语境、又顺应用户假设的“伪史”。
 
-与传统大模型自由创作不同，《明域》将 Embedding 技术从 **表示工具** 升级为 **生成约束机制**。虚构内容的生成并非凭空想象，而是在历史语义流形的局部邻域内进行 **受约束的向量探索**。
+**MingYu** is an experimental historical deduction tool based on **RAG** and **Vector Space Interpolation**.
 
-Unlike traditional LLM free-form creation, MingYu upgrades Embedding technology from a **representation tool** to a **generation constraint mechanism**. The generation of fictional content is not baseless imagination but **constrained vector exploration** within the local neighborhood of the historical semantic manifold.
+Unlike the unconstrained hallucinations of traditional LLMs, MingYu constructs a **vector path** between "Strict History" and "User Hypothesis" using Embedding technology. By controlling the offset coefficient $\alpha$, we locate the "most plausible deviation neighborhood" within the semantic space of Ming Dynasty history, constraining the LLM to generate "pseudo-history" that fits the historical context while satisfying the user's "What-If" scenario.
 
----
+-----
 
-## 🏗️ 技术架构 / Technical Architecture
+## 🧠 核心逻辑：Embedding 如何控制生成？
 
-本系统采用 **四层嵌入与生成体系 (Four-Layer Embedding & Generation System)**：
+## Core Logic: How Embeddings Guide Generation
 
-### 1. 历史事实嵌入层 (Historical Fact Embedding Layer)
-- **功能**：对《明实录》《明史》等正史文本进行细粒度向量化，构建“明代历史知识图谱嵌入空间”。
-- **实现**：使用 Sentence-BERT 模型 (BAAI/bge-small-zh) 进行语义编码。
-- **Function**: Performs fine-grained vectorization of official historical texts (e.g., "Ming Shilu", "History of Ming") to construct the "Ming Dynasty Historical Knowledge Graph Embedding Space".
-- **Implementation**: Uses Sentence-BERT (BAAI/bge-small-zh) for semantic encoding.
+本项目的核心并非简单的关键词搜索，而是 **向量空间内的导航 (Vector Navigation)**。系统通过 `FictionDiffusionLayer` 实现以下逻辑：
 
-### 2. 制度-语境对齐层 (Institution-Context Alignment Layer)
-- **功能**：确保生成内容符合明代制度逻辑（如卫所、里甲、科举、厂卫）与时代语境。
-- **实现**：基于关键词库的制度逻辑校验与评分机制。
-- **Function**: Ensures generated content aligns with Ming Dynasty institutional logic (e.g., Wei-Suo system, Lijia system, Imperial Examinations, Eastern/Western Depot) and historical context.
-- **Implementation**: Institutional logic validation and scoring mechanism based on keyword dictionaries.
+The core is not simple keyword search, but **Vector Navigation**. The system implements the following logic via `FictionDiffusionLayer`:
 
-### 3. 合理虚构扩散层 (Reasonable Fiction Diffusion Layer)
-- **功能**：在历史语义邻域内进行受控向量插值，生成“未记载但可能”的事件细节。
-- **实现**：向量空间插值 (Vector Interpolation) + 最近邻检索 (Nearest Neighbor Search)。
-- **Function**: Performs controlled vector interpolation within the historical semantic neighborhood to generate "unrecorded but plausible" event details.
-- **Implementation**: Vector Interpolation + Nearest Neighbor Search.
+$$V_{target} = (1 - \alpha) \cdot V_{fact} + \alpha \cdot V_{query}$$
 
-### 4. 大模型生成层 (LLM Generation Layer)
-- **功能**：基于插值后的语义语境，调用 Qwen 大模型生成真正的伪史文本。
-- **实现**：Prompt Engineering + Qwen-Plus API。
-- **Function**: Generates actual pseudo-history text using Qwen LLM based on the interpolated semantic context.
-- **Implementation**: Prompt Engineering + Qwen-Plus API.
+1.  **定位锚点 (Anchor)**: 首先找到与用户假设 ($V_{query}$) 最接近的真实历史事件 ($V_{fact}$)。
 
-### 5. 内容合规性审核 (Content Auditor)
-- **功能**：验证生成内容是否符合用户指令，并进行合规性检查。
-- **实现**：实体一致性检查 (Entity Consistency Check)。
-- **Function**: Validates if generated content matches user instructions and performs compliance checks.
-- **Implementation**: Entity Consistency Check.
+2.  **向量插值 (Interpolation)**: 根据系数 $\alpha$ 计算目标向量 $V_{target}$。
 
----
+      * $\alpha \to 0$: 结果趋向真实历史（复读史书）。
+      * $\alpha \to 1$: 结果趋向用户假设（可能脱离时代背景）。
+
+3.  **邻域检索 (Neighbor Retrieval)**: **关键步骤**。系统不直接使用用户的文本去搜索，而是使用计算出的 $V_{target}$ 在数据库中检索“在该平行时空下可能发生的相关事件”。
+
+4.  **受控生成 (Constrained Generation)**: 将这些“偏移后的历史上下文”喂给 Qwen 大模型，使其在限定的语境下进行写作。
+
+5.  **Anchor Positioning**: Find the real historical event ($V_{fact}$) closest to the user's hypothesis ($V_{query}$).
+
+6.  **Vector Interpolation**: Calculate the target vector $V_{target}$ based on $\alpha$.
+
+7.  **Neighbor Retrieval**: **Key Step**. Instead of searching with user text, the system uses $V_{target}$ to retrieve "relevant events that might happen in this parallel timeline."
+
+8.  **Constrained Generation**: Feed these "shifted historical contexts" to the Qwen LLM for grounded writing.
+
+-----
+
+## ✨ 功能特性 / Features
+
+  * **🛡️ 历史语义嵌入 (Historical Embeddings)**
+      * 基于 `BAAI/bge-small-zh-v1.5` 模型，对《明史》及明代维基条目进行细粒度向量化。
+      * Supports fine-grained vectorization of Ming Dynasty historical texts.
+  * **🎛️ 动态伪史调节 (Dynamic Adjustment)**
+      * 用户可通过滑块实时调节 $\alpha$ 值，直观感受“史实”与“虚构”的拉锯。
+      * Adjust $\alpha$ in real-time to balance between historical accuracy and imagination.
+  * **📊 语义空间可视化 (PCA Visualization)**
+      * 使用 Plotly 展示历史背景点、锚点、查询点及生成点的空间分布关系。
+      * Visualizes the spatial distribution of history, anchor, query, and generated points via PCA.
+  * **⚖️ 制度一致性校验 (Institutional Consistency)**
+      * 内置关键词校验器，检测生成内容是否包含“锦衣卫”、“内阁”、“六部”等明代特有制度名词。
+      * Built-in validator ensures generated content contains Ming-specific institutional terms.
+
+-----
 
 ## 🚀 快速开始 / Quick Start
 
-### 1. 环境准备 / Prerequisites
-确保已安装 Python 3.8+。
-Ensure Python 3.8+ is installed.
+### 1\. 环境准备 / Prerequisites
 
 ```bash
+# 推荐使用 Python 3.8+
 pip install -r requirements.txt
 ```
 
-### 2. 构建历史语义索引 / Build Historical Semantic Index
-首次运行前，需要处理原始文本并生成向量数据库。
-Before the first run, process raw texts and generate the vector database.
+### 2\. 配置 API Key / Setup API Key
+
+本项目使用 **Qwen-Plus (通义千问)** 进行文本生成。
+请在项目根目录创建 `.env` 文件或设置环境变量：
+This project uses **Qwen-Plus** for text generation. Create a `.env` file or set env variable:
+
+```bash
+export DASHSCOPE_API_KEY="sk-xxxxxxxxxxxxxxxx"
+```
+
+### 3\. 构建数据索引 / Build Index
+
+首次运行前，需处理 `ming_dynasty_cn/` 下的原始语料并生成向量数据库。
+Process raw corpus and generate the vector database before the first run.
 
 ```bash
 python build_index.py
+# 输出: 💾 数据库已保存为: ming_vectors.pkl
 ```
-> 成功后会生成 `ming_vectors.pkl` 文件。
-> This will generate the `ming_vectors.pkl` file upon success.
 
-### 3. 启动系统 / Launch System
-启动 Streamlit Web 界面。
-Launch the Streamlit Web Interface.
+### 4\. 启动系统 / Launch App
 
 ```bash
 streamlit run app.py
 ```
 
----
+-----
 
-## 📂 文件结构 / File Structure
+## 📂 项目结构 / Structure
 
 ```text
 .
-├── app.py                  # 主应用程序 (Main Application - Streamlit)
-├── build_index.py          # 索引构建脚本 (Index Building Script)
-├── ming_dynasty_cn/        # 原始历史语料 (Raw Historical Corpus - .txt)
-├── ming_vectors.pkl        # 向量数据库 (Vector Database - Generated)
-├── requirements.txt        # 依赖列表 (Dependencies)
-└── README.md               # 说明文档 (Documentation)
+├── app.py                  # Streamlit 前端交互与可视化入口 (UI & Visualization)
+├── core_logic.py           # 核心业务逻辑 (Vector Search, Interpolation, LLM Call)
+├── build_index.py          # 离线数据处理与向量化脚本 (Data Processing & Embedding)
+├── Data_preprocessing.py   # 维基百科爬虫 (Wikipedia Scraper)
+├── ming_dynasty_cn/        # 原始语料库 (Raw Corpus)
+└── ming_vectors.pkl        # 预计算的向量数据库 (Pre-computed Vector DB)
 ```
+-----
+## ⚠️ 免责声明 / Disclaimer
 
----
-
-## 🖼️ 系统预览 / System Preview
-
-- **历史锚点 (Fact Anchor)**: 真实历史中与假设最接近的事件。
-- **语义流形可视化**: 通过 PCA 降维展示历史事件与虚构假设在语义空间中的分布。
-- **制度校验**: 自动检测生成内容是否符合明代政治制度特征。
-
----
-
-## 👥 致谢 / Credits
-
-本项目受马伯庸“在历史缝隙中讲故事”的启发，旨在为历史教学、公众史学与文化创作提供一种新型的认知工具。
-
-Inspired by Ma Boyong's concept of "telling stories in the cracks of history," this project aims to provide a new cognitive tool for history education, public history, and cultural creation.
+本项目生成内容均为基于算法的虚构文本（伪史），仅供数字人文研究与娱乐，请勿引用为真实历史资料。
+Generated content is algorithmically fictional (pseudo-history). Do not cite as real historical facts.
