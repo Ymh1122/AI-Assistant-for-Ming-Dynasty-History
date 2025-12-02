@@ -5,11 +5,11 @@
 
 ### Vector-Guided Reasonable Pseudo-History Generator
 
-**《明域》** 是一个基于 **RAG (检索增强生成)** 与 **向量空间插值** 技术的实验性历史推演工具。
+**《明域》** 是一个基于  **向量空间插值** 技术的实验性历史推演工具。
 
 不同于传统大模型“天马行空”的虚构，本系统利用 Embedding 技术在“严谨史实”与“用户假设”之间构建一条**向量通道**。通过控制偏移系数 $\alpha$，我们在明代历史的语义空间中寻找“最合理的偏差邻域”，从而约束大模型生成既符合明代语境、又顺应用户假设的“伪史”。
 
-**MingYu** is an experimental historical deduction tool based on **RAG** and **Vector Space Interpolation**.
+**MingYu** is an experimental historical deduction tool based on **Vector Space Interpolation**.
 
 Unlike the unconstrained hallucinations of traditional LLMs, MingYu constructs a **vector path** between "Strict History" and "User Hypothesis" using Embedding technology. By controlling the offset coefficient $\alpha$, we locate the "most plausible deviation neighborhood" within the semantic space of Ming Dynasty history, constraining the LLM to generate "pseudo-history" that fits the historical context while satisfying the user's "What-If" scenario.
 
